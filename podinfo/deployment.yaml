@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-podinfo
+spec:
+  # `replicas` REMOVIDO de propósito: o HPA (hpa.yaml) é o dono do número de
+  # réplicas. Se declarado aqui, o ArgoCD (selfHeal) brigaria com o HPA — ver
+  # o ignoreDifferences no Application (k8s-manifests/argocd/podinfo-app.yaml).
+  selector:
+    matchLabels:
+      app: podinfo
+  template:
+    metadata:
+      labels:
+        app: podinfo
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "app-role"
+        # CPU do sidecar declarada para o HPA fechar a conta de % de utilização
+        vault.hashicorp.com/agent-requests-cpu: "25m"
+        vault.hashicorp.com/agent-limits-cpu: "50m"
+        vault.hashicorp.com/agent-init-requests-cpu: "25m"
+        vault.hashicorp.com/agent-init-limits-cpu: "50m"
+        # Sidecar roda com o mesmo UID da app para conseguir dar killall na rotação
+        vault.hashicorp.com/agent-run-as-same-user: "true"
+        # Credencial dinâmica do banco (Database Engine), não mais o KV legado
+        vault.hashicorp.com/agent-inject-secret-db-creds.env: "database/creds/app-role"
+        vault.hashicorp.com/agent-inject-template-db-creds.env: |
+          {{- with secret "database/creds/app-role" -}}
+          export DB_USER="{{ .Data.username }}"
+          export DB_PASS="{{ .Data.password }}"
+          {{- end -}}
+        # Na rotação (max_ttl) o sidecar reescreve o arquivo e mata o processo p/ recarregar
+        vault.hashicorp.com/agent-inject-command-db-creds.env: "killall podinfo"
+    spec:
+      serviceAccountName: podinfo-sa
+      shareProcessNamespace: true # sidecar enxerga o processo da app para o killall
+      containers:
+        - name: backend
+          image: stefanprodan/podinfo:latest
+          securityContext:
+            runAsUser: 1000 # exigido pelo webhook do OpenBao
+          ports:
+            - containerPort: 9898
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "32Mi"
+            limits:
+              cpu: "250m"
+              memory: "64Mi"
+          env:
+            - name: LOG_LEVEL
+              valueFrom:
+                configMapKeyRef:
+                  name: podinfo-config
+                  key: APP_LOG_LEVEL

@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# O ArgoCD cria o namespace via CreateNamespace=true — não declarar Namespace aqui.
+# prod-apps é obrigatório: a role do OpenBao está amarrada a podinfo-sa neste ns.
+namespace: prod-apps
+
+resources:
+  - serviceaccount.yaml
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - hpa.yaml
+  - ingress.yaml
