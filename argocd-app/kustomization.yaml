@@ -12,4 +12,4 @@ resources:
 images:
 - name: vlimanu/argocd-app
   newName: vlimanu/argocd-app
-  newTag: 1.0.0
+  newTag: 1.1.0
