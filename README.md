@@ -1,32 +1,46 @@
 # gitops-manifests
 
-Repositório **GitOps** (kustomize) que o **ArgoCD** observa. É a *fonte da verdade* do que
-roda no cluster `kind` do lab — o ArgoCD reconcilia o cluster com este repo.
+Repositório **GitOps** (kustomize) que o **ArgoCD** observa. É a fonte da verdade
+da POC multi-cluster: ArgoCD roda no cluster `poc-prod`, mas reconcilia workloads
+nos clusters `poc-prod` e `poc-dev`.
 
 ```
 .
-├── argocd-app/   # API FastAPI (repo de source: victor-ln/argocd-app)
-│   └── kustomization.yaml  ← o CI do argocd-app dá `kustomize edit set image` aqui
-└── podinfo/      # app de demo do OpenBao (cofre) — manifestos vindos do lab de infra
+├── argocd/apps/
+│   ├── poc-argo-app-dev.yaml
+│   └── poc-argo-app-prod.yaml
+└── projects/poc/argo-app/
+    ├── base/
+    └── overlays/
+        ├── dev/   # cluster poc-dev, tag sha-<7>
+        └── prod/  # cluster poc-prod, tag vX.Y.Z
 ```
 
 ## Quem mexe em quê
 
-- **`argocd-app/`** — o CI do repo `argocd-app` (job `bump`) atualiza a **tag da imagem**
-  no `kustomization.yaml` a cada release. Humano normalmente não edita a tag à mão.
-- **`podinfo/`** — editado por humano (é a demo do OpenBao; não tem CI de bump).
+- **`projects/poc/argo-app/overlays/dev`** — bump automático do CI em branch de
+  validação, usando tag `sha-<7>`.
+- **`projects/poc/argo-app/overlays/prod`** — bump automático da promoção para
+  produção, usando tag `vX.Y.Z`.
+- **`argocd/apps`** — App-of-Apps: duas `Application`, uma para cada cluster.
 
 ## Como o ArgoCD consome
 
-Dois `Application` (definidos no repo de infra `k8s-manifests`, em `argocd/`) apontam para
-cá, cada um num `path`:
+O `root-poc-apps` (definido em `k8s-manifests/bootstrap/argocd/app-root.yaml`) aponta
+para `argocd/apps` e cria as Applications abaixo:
 
 | Application      | path         | namespace   |
 | ---------------- | ------------ | ----------- |
-| `argocd-app`     | `argocd-app` | `argocd-app`|
-| `podinfo-gitops` | `podinfo`    | `prod-apps` |
+| `poc-argo-app-dev`  | `projects/poc/argo-app/overlays/dev`  | `poc` no cluster `poc-dev` |
+| `poc-argo-app-prod` | `projects/poc/argo-app/overlays/prod` | `poc` no cluster `poc-prod` |
 
-> Nenhum overlay declara o recurso `Namespace`: o ArgoCD cria via `CreateNamespace=true`
-> (evita dois Apps disputando o mesmo objeto Namespace).
+Os dois overlays usam `ExternalSecret` com o mesmo `ClusterSecretStore`
+`openbao-cluster-store`. No cluster `poc-dev`, esse store aponta para o OpenBao
+exposto pelo cluster `poc-prod`.
 
-Validar um overlay localmente: `kustomize build argocd-app` / `kustomize build podinfo`.
+Validar localmente:
+
+```sh
+kustomize build projects/poc/argo-app/overlays/dev
+kustomize build projects/poc/argo-app/overlays/prod
+```
