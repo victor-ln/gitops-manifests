@@ -1,0 +1,80 @@
+name: Validate Image Bump
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate:
+    name: Validar diff permitido
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: PR comum
+        if: github.event.pull_request.user.login != vars.BUMP_AUTHOR && !contains(github.event.pull_request.labels.*.name, 'ci-bump')
+        run: echo "PR comum: validacao estrita de bump nao se aplica."
+
+      - name: Validar arquivos e linhas alteradas
+        if: github.event.pull_request.user.login == vars.BUMP_AUTHOR || contains(github.event.pull_request.labels.*.name, 'ci-bump')
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+          echo "Arquivos alterados:"; echo "$changed_files"
+
+          if [ -z "$changed_files" ]; then
+            echo "::error::Nenhum arquivo alterado."; exit 1
+          fi
+
+          while IFS= read -r file; do
+            case "$file" in
+              projects/*/*/overlays/dev/kustomization.yaml) ;;
+              projects/*/*/overlays/prod/kustomization.yaml) ;;
+              *) echo "::error::Arquivo nao permitido em PR de bump: $file"; exit 1 ;;
+            esac
+          done <<< "$changed_files"
+
+          payload="$(git diff --unified=0 "$BASE_SHA" "$HEAD_SHA" -- $changed_files \
+            | grep -E '^[+-]' | grep -Ev '^(---|\+\+\+)' || true)"
+
+          if ! printf '%s\n' "$payload" | grep -qE '^[+-][[:space:]]*newTag:'; then
+            echo "::error::O PR precisa alterar ao menos uma linha newTag."; exit 1
+          fi
+
+          regex='^[+-][[:space:]]*newTag:[[:space:]]*"?(v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?|sha-[0-9a-f]{7,40})"?[[:space:]]*$'
+          invalid="$(printf '%s\n' "$payload" | grep -Ev "$regex" || true)"
+          if [ -n "$invalid" ]; then
+            echo "::error::Linhas alteradas nao permitidas:"; printf '%s\n' "$invalid"; exit 1
+          fi
+
+          echo "Bump valido."
+
+      - name: Renderizar overlays alterados
+        if: github.event.pull_request.user.login == vars.BUMP_AUTHOR || contains(github.event.pull_request.labels.*.name, 'ci-bump')
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          for f in $(git diff --name-only "$BASE_SHA" "$HEAD_SHA"); do
+            dir="$(dirname "$f")"
+            echo "== kubectl kustomize $dir =="
+            kubectl kustomize "$dir" > /dev/null
+          done
+
+      - name: Auto-aprovar PR de bump
+        if: github.event.pull_request.user.login == vars.BUMP_AUTHOR
+        env:
+          GH_TOKEN: ${{ secrets.BUMP_APPROVER_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr review "$PR_URL" --approve --body "Aprovado automaticamente: PR altera somente newTag de overlays."
