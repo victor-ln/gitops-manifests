@@ -51,8 +51,9 @@ jobs:
             echo "::error::O PR precisa alterar ao menos uma linha newTag."; exit 1
           fi
 
-          regex='^[+-][[:space:]]*newTag:[[:space:]]*"?(v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?|sha-[0-9a-f]{7,40})"?[[:space:]]*$'
-          invalid="$(printf '%s\n' "$payload" | grep -Ev "$regex" || true)"
+          added="$(printf '%s\n' "$payload" | grep -E '^\+[[:space:]]*newTag:' || true)"
+          regex='^\+[[:space:]]*newTag:[[:space:]]*"?(v[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?|sha-[0-9a-f]{7,40})"?[[:space:]]*$'
+          invalid="$(printf '%s\n' "$added" | grep -Ev "$regex" || true)"
           if [ -n "$invalid" ]; then
             echo "::error::Linhas alteradas nao permitidas:"; printf '%s\n' "$invalid"; exit 1
           fi

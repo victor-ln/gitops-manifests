@@ -33,4 +33,4 @@ patches:
 images:
   - name: vlimanu/argocd-app
     newName: vlimanu/argocd-app
-    newTag: sha-0000000
+    newTag: 1.0.0
