@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - configmap.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: argo-app
+      app.kubernetes.io/part-of: poc-cicd
+      app.kubernetes.io/component: api
+    includeSelectors: false
+    includeTemplates: true
+
+images:
+  - name: vlimanu/argocd-app
+    newName: vlimanu/argocd-app
+    newTag: latest
