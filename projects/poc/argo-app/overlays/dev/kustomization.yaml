@@ -33,4 +33,4 @@ patches:
 images:
   - name: vlimanu/argocd-app
     newName: vlimanu/argocd-app
-    newTag: sha-1ef5663
+    newTag: sha-f72a78f
